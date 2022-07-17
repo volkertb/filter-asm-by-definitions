@@ -6,52 +6,81 @@ import sys
 
 ENCODING_ARG_PREFIX = "--encoding="
 ASM_DEF_FILTER_PREFIX = "-D"
+OUTPUT_FILE = "out.asm"
 
 
 def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
     print(f"Specified allowlisted IFDEF filters: {allowlisted_asm_def_filters}")
     try:
         with open(input_file_path, 'r', encoding=encoding) as fstream:
-            currently_in_excluded_segment = False
-            for line in fstream:
+            with open(OUTPUT_FILE, 'w', encoding=encoding) as fostream:
+                currently_in_excluded_segment = False
+                for i, line in enumerate(fstream):
 
-                allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters)
+                    directive, definition = get_directive_with_arg_from_line(line)
 
-                directive, definition = get_directive_with_arg_from_line(line)
+                    if currently_in_excluded_segment:
 
-                if currently_in_excluded_segment:
+                        if directive == "ELSEIFDEF":
+                            if definition in allowlisted_asm_def_filters:
+                                print(f"{input_file_path}:{i + 1}: Encountered ELSEIFDEF directive with allowlisted "
+                                      f"definition {definition}, end of excluded segment.")
+                                currently_in_excluded_segment = False
+                            else:
+                                print(
+                                    f"{input_file_path}:{i + 1}: Encountered ELSEIFDEF directive with non-allowlisted definition {definition}, "
+                                    "continuing excluded segment.")
+                            continue
 
-                    if directive == "ELSEIFDEF":
-                        if definition in allowlisted_asm_def_filters:
+                        if directive == "ENDIF":
+                            print(f"{input_file_path}:{i + 1}: Encountered ENDIF directive, end of excluded segment.")
                             currently_in_excluded_segment = False
-                        continue
+                            continue
 
-                    if directive == "ENDIF":
-                        currently_in_excluded_segment = False
-                        continue
+                    else:
+                        # Currently in an included (allowlisted) segment
 
-                else:
-                    # Currently in an included (allowlisted) segment
+                        allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters, f"{input_file_path}:{i + 1}: ")
 
-                    if directive == "IFDEF":
-                        if definition not in allowlisted_asm_def_filters:
+                        if directive == "IFDEF":
+                            if definition not in allowlisted_asm_def_filters:
+                                print(
+                                    f"{input_file_path}:{i + 1}: Encountered IFDEF directive with non-allowlisted definition {definition}, "
+                                    "start of excluded segment.")
+                                currently_in_excluded_segment = True
+                            else:
+                                print(
+                                    f"{input_file_path}:{i + 1}: Encountered IFDEF directive with allowlisted definition {definition}, "
+                                    "continuing included segment.")
+                            continue
+
+                        if directive == "IFNDEF":
+                            if definition in allowlisted_asm_def_filters:
+                                print(
+                                    f"{input_file_path}:{i + 1}: Encountered IFNDEF directive with allowlisted definition {definition}, "
+                                    "start of excluded segment.")
+                                currently_in_excluded_segment = True
+                            else:
+                                print(
+                                    f"{input_file_path}:{i + 1}: Encountered IFNDEF directive with non-allowlisted definition {definition}, "
+                                    "continuing included segment.")
+                            continue
+
+                        if directive == "ELSEIFDEF":
+                            print(
+                                f"{input_file_path}:{i + 1}: Encountered ELSEIFDEF directive with definition {definition}, start of excluded "
+                                "segment, regardless of allowlisting.")
                             currently_in_excluded_segment = True
-                        continue
+                            continue
 
-                    if directive == "IFNDEF":
-                        if definition in allowlisted_asm_def_filters:
-                            currently_in_excluded_segment = True
-                        continue
+                        if directive == "ENDIF":
+                            print(
+                                f"{input_file_path}:{i + 1}: Encountered ENDIF directive, continuing included segment.")
+                            continue
 
-                    if directive == "ELSEIFDEF":
-                        currently_in_excluded_segment = True
-                        continue
-
-                    if directive == "ENDIF":
-                        continue
-
-                    line = line.rstrip('\n')
-                    print(line)
+                        fostream.write(line)
+                        # line = line.rstrip('\n')
+                        # print(line)
 
     except UnicodeDecodeError:
         sys.exit(f"The specified input file {input_file_path} does not seem to have {encoding} encoding.\n"
@@ -59,13 +88,16 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
                  f"(for instance `{ENCODING_ARG_PREFIX}IBM437`, which is typical for DOS sources)")
 
 
-def add_to_allowlist_if_equ(line, allowlist):
+def add_to_allowlist_if_equ(line, allowlist, log_prefix):
     statement_components = line.lstrip().split()  # "default separator is any whitespace"
 
     if len(statement_components) < 3 or statement_components[1].upper() != "EQU":
         return allowlist
 
-    allowlist.append(statement_components[0])
+    equ_definition = statement_components[0]
+    print(
+        f"{log_prefix}: Encountered EQU directive for definition {equ_definition}, adding it to allowlist")
+    allowlist.append(equ_definition)
     return allowlist
 
 
@@ -74,7 +106,7 @@ def get_directive_with_arg_from_line(line):
     if len(statement_components) < 1:
         return None, None
     directive = statement_components[0].upper()
-    if directive == "IFDEF" or directive == "ELSEIFDEF":
+    if directive == "IFDEF" or directive == "IFNDEF" or directive == "ELSEIFDEF":
         return directive, statement_components[1].upper()
     else:
         return directive, None
