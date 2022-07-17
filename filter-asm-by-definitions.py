@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2022 Volkert de Buisonjé
+
 import sys
 
 ENCODING_ARG_PREFIX = "--encoding="
@@ -9,13 +12,90 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
     print(f"Specified allowlisted IFDEF filters: {allowlisted_asm_def_filters}")
     try:
         with open(input_file_path, 'r', encoding=encoding) as fstream:
+            currently_in_excluded_segment = False
             for line in fstream:
-                line = line.rstrip('\n')
-                print(line)
+
+                allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters)
+
+                directive, definition = get_directive_with_arg_from_line(line)
+
+                if currently_in_excluded_segment:
+
+                    if directive == "ELSEIFDEF":
+                        if definition in allowlisted_asm_def_filters:
+                            currently_in_excluded_segment = False
+                        continue
+
+                    if directive == "ENDIF":
+                        currently_in_excluded_segment = False
+                        continue
+
+                else:
+                    # Currently in an included (allowlisted) segment
+
+                    if directive == "IFDEF":
+                        if definition not in allowlisted_asm_def_filters:
+                            currently_in_excluded_segment = True
+                        continue
+
+                    if directive == "IFNDEF":
+                        if definition in allowlisted_asm_def_filters:
+                            currently_in_excluded_segment = True
+                        continue
+
+                    if directive == "ELSEIFDEF":
+                        currently_in_excluded_segment = True
+                        continue
+
+                    if directive == "ENDIF":
+                        continue
+
+                    line = line.rstrip('\n')
+                    print(line)
+
     except UnicodeDecodeError:
         sys.exit(f"The specified input file {input_file_path} does not seem to have {encoding} encoding.\n"
                  f"Try specifying the correct encoding as an argument, using the `{ENCODING_ARG_PREFIX} prefix.\n"
                  f"(for instance `{ENCODING_ARG_PREFIX}IBM437`, which is typical for DOS sources)")
+
+
+def add_to_allowlist_if_equ(line, allowlist):
+    statement_components = line.lstrip().split()  # "default separator is any whitespace"
+
+    if len(statement_components) < 3 or statement_components[1].upper() != "EQU":
+        return allowlist
+
+    allowlist.append(statement_components[0])
+    return allowlist
+
+
+def get_directive_with_arg_from_line(line):
+    statement_components = line.lstrip().split()  # "default separator is any whitespace"
+    if len(statement_components) < 1:
+        return None, None
+    directive = statement_components[0].upper()
+    if directive == "IFDEF" or directive == "ELSEIFDEF":
+        return directive, statement_components[1].upper()
+    else:
+        return directive, None
+
+
+def is_start_of_excluded_definition(line, allowlisted_defs):
+    statement_components = line.lstrip().split()  # "default separator is any whitespace"
+    first_statement_in_line_in_upper_case = statement_components[0].upper()
+    if first_statement_in_line_in_upper_case == "IFDEF" or first_statement_in_line_in_upper_case == "ELSEIFDEF":
+        if statement_components[1] in allowlisted_defs:
+            return True
+    return False
+
+
+def is_start_of_allowlisted_definition(line, allowlisted_defs):
+    statement_components = line.lstrip().split()  # "default separator is any whitespace"
+    first_statement_in_line_in_upper_case = statement_components[0].upper()
+    if first_statement_in_line_in_upper_case == "IFDEF" or first_statement_in_line_in_upper_case == "ELSEIFDEF":
+        if statement_components[1] in allowlisted_defs:
+            return True
+    return False
 
 
 if __name__ == "__main__":
