@@ -53,6 +53,8 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
                                 process_conditional_definition_true_block(line_iterator, fostream,
                                                                           allowlisted_asm_def_filters)
                         else:
+                            allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
+                                                                                  f"{input_file_path}:{i + 1}: ")
                             fostream.write(line)
                             # line = line.rstrip('\n')
                             # print(line)
@@ -72,6 +74,9 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
     while True:
         i, line = next(line_iterator)
         directive, definition = get_directive_with_arg_from_line(line)
+
+        allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
+                                                              f"Input line {i + 1}: ")
 
         if directive == "ENDIF":
             return
@@ -100,6 +105,8 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
         elif directive is not None and directive.startswith("ELSE"):
             ignore_remaining_lines_until_endif = True
         else:
+            allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
+                                                                  f"Input line {i + 1}: ")
             fostream.write(line)
 
 
@@ -137,11 +144,6 @@ def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def
         i, line = next(line_iterator)
         directive, definition = get_directive_with_arg_from_line(line)
 
-        if directive == "ENDIF":
-            # This is another IF directive, not related to conditional definitions, so include the ENDIF in the output.
-            fostream.write(line)
-            return
-
         if directive == "IFDEF":
             if definition in allowlisted_asm_def_filters:
                 process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
@@ -156,6 +158,13 @@ def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def
         if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
             sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF inside an IFxxx directive other than IFDEF "
                      "or IFNDEF is not currently supported by this script.")
+
+        allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
+                                                              f"Input line {i + 1}: ")
+        fostream.write(line)
+
+        if directive == "ENDIF":
+            return
 
 
 def add_to_allowlist_if_equ(line, allowlist, log_prefix):
