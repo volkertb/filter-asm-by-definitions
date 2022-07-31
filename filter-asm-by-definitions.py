@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
+# SPDX-FileType: SOURCE
+# SPDX-FileCopyrightText: Copyright 2022 Volkert de Buisonjé
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2022 Volkert de Buisonjé
 
 import sys
+from enum import Enum
 
 ENCODING_ARG_PREFIX = "--encoding="
 ASM_DEF_FILTER_PREFIX = "-D"
 OUTPUT_FILE = "out.asm"
+CONDITIONAL_DEFINITION_DIRECTIVES = ["IFDEF", "IFNDEF", "ELSEIFDEF", "ELSEIFNDEF"]
+
+
+class MasmKeywordAction(Enum):
+    TREAT_AS_CONTENT = 0
+    INCLUDE_CODE_BLOCK = 1
+    EXCLUDE_CODE_BLOCK = 2
 
 
 def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
@@ -14,78 +23,139 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
     try:
         with open(input_file_path, 'r', encoding=encoding) as fstream:
             with open(OUTPUT_FILE, 'w', encoding=encoding) as fostream:
+                if_directive_lines_stack = []
                 currently_in_excluded_segment = False
-                for i, line in enumerate(fstream):
 
-                    directive, definition = get_directive_with_arg_from_line(line)
+                currently_inside_conditional_definition_block = False  # TODO: is this one still necessary, since we now have `what_to_do_with_next_else_keyword`?
+                directive_confirming_inclusion_in_block = None
+                directive_confirming_exlusion_in_block = None
+                what_to_do_with_next_else_keyword = MasmKeywordAction.TREAT_AS_CONTENT
 
-                    if currently_in_excluded_segment:
+                line_iterator = iter(enumerate(fstream))
 
-                        if directive == "ELSEIFDEF":
-                            if definition in allowlisted_asm_def_filters:
-                                print(f"{input_file_path}:{i + 1}: Encountered ELSEIFDEF directive with allowlisted "
-                                      f"definition {definition}, end of excluded segment.")
-                                currently_in_excluded_segment = False
-                            else:
-                                print(
-                                    f"{input_file_path}:{i + 1}: Encountered ELSEIFDEF directive with non-allowlisted definition {definition}, "
-                                    "continuing excluded segment.")
-                            continue
-
-                        if directive == "ENDIF":
-                            print(f"{input_file_path}:{i + 1}: Encountered ENDIF directive, end of excluded segment.")
-                            currently_in_excluded_segment = False
-                            continue
-
-                    else:
-                        # Currently in an included (allowlisted) segment
-
-                        allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters, f"{input_file_path}:{i + 1}: ")
+                try:
+                    while True:
+                        i, line = next(line_iterator)
+                        directive, definition = get_directive_with_arg_from_line(line)
 
                         if directive == "IFDEF":
-                            if definition not in allowlisted_asm_def_filters:
-                                print(
-                                    f"{input_file_path}:{i + 1}: Encountered IFDEF directive with non-allowlisted definition {definition}, "
-                                    "start of excluded segment.")
-                                currently_in_excluded_segment = True
-                            else:
-                                print(
-                                    f"{input_file_path}:{i + 1}: Encountered IFDEF directive with allowlisted definition {definition}, "
-                                    "continuing included segment.")
-                            continue
-
-                        if directive == "IFNDEF":
                             if definition in allowlisted_asm_def_filters:
-                                print(
-                                    f"{input_file_path}:{i + 1}: Encountered IFNDEF directive with allowlisted definition {definition}, "
-                                    "start of excluded segment.")
-                                currently_in_excluded_segment = True
+                                process_conditional_definition_true_block(line_iterator, fostream,
+                                                                          allowlisted_asm_def_filters)
                             else:
-                                print(
-                                    f"{input_file_path}:{i + 1}: Encountered IFNDEF directive with non-allowlisted definition {definition}, "
-                                    "continuing included segment.")
-                            continue
+                                process_conditional_definition_false_block(line_iterator, fostream,
+                                                                           allowlisted_asm_def_filters)
+                        elif directive == "IFNDEF":
+                            if definition in allowlisted_asm_def_filters:
+                                process_conditional_definition_false_block(line_iterator, fostream,
+                                                                           allowlisted_asm_def_filters)
+                            else:
+                                process_conditional_definition_true_block(line_iterator, fostream,
+                                                                          allowlisted_asm_def_filters)
+                        else:
+                            fostream.write(line)
+                            # line = line.rstrip('\n')
+                            # print(line)
 
-                        if directive == "ELSEIFDEF":
-                            print(
-                                f"{input_file_path}:{i + 1}: Encountered ELSEIFDEF directive with definition {definition}, start of excluded "
-                                "segment, regardless of allowlisting.")
-                            currently_in_excluded_segment = True
-                            continue
-
-                        if directive == "ENDIF":
-                            print(
-                                f"{input_file_path}:{i + 1}: Encountered ENDIF directive, continuing included segment.")
-                            continue
-
-                        fostream.write(line)
-                        # line = line.rstrip('\n')
-                        # print(line)
+                # Python's iterator has no hasNext equivalent. :/
+                except StopIteration:
+                    print("All lines in input file processed.")
 
     except UnicodeDecodeError:
         sys.exit(f"The specified input file {input_file_path} does not seem to have {encoding} encoding.\n"
                  f"Try specifying the correct encoding as an argument, using the `{ENCODING_ARG_PREFIX} prefix.\n"
                  f"(for instance `{ENCODING_ARG_PREFIX}IBM437`, which is typical for DOS sources)")
+
+
+def process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters):
+    ignore_remaining_lines_until_endif = False
+    while True:
+        i, line = next(line_iterator)
+        directive, definition = get_directive_with_arg_from_line(line)
+
+        if directive == "ENDIF":
+            return
+
+        if ignore_remaining_lines_until_endif:
+            continue
+
+        if directive == "IFDEF":
+            if definition in allowlisted_asm_def_filters:
+                process_conditional_definition_true_block(line_iterator, fostream,
+                                                          allowlisted_asm_def_filters)
+            else:
+                process_conditional_definition_false_block(line_iterator, fostream,
+                                                           allowlisted_asm_def_filters)
+        elif directive == "IFNDEF":
+            if definition in allowlisted_asm_def_filters:
+                process_conditional_definition_false_block(line_iterator, fostream,
+                                                           allowlisted_asm_def_filters)
+            else:
+                process_conditional_definition_true_block(line_iterator, fostream,
+                                                          allowlisted_asm_def_filters)
+        elif directive is not None and directive.startswith("IF"):
+            # This is another IFx directive, not related to conditional definitions, so include the IFx in the output.
+            fostream.write(line)
+            process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters)
+        elif directive is not None and directive.startswith("ELSE"):
+            ignore_remaining_lines_until_endif = True
+        else:
+            fostream.write(line)
+
+
+def process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters):
+    else_true_branch_encountered_yet = False
+    currently_inside_else_true_branch = False
+    while True:
+        i, line = next(line_iterator)
+        directive, definition = get_directive_with_arg_from_line(line)
+
+        if directive == "ENDIF":
+            return
+
+        if directive is not None and not directive.startswith("ELSE"):
+            continue
+
+        if directive == "ELSE":
+            # NOTE: Not strictly checking whether other IFxDEF between this ELSE and ENDIF will be encountered.
+            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            return
+
+        if directive == "ELSEIFDEF" and definition in allowlisted_asm_def_filters:
+            # NOTE: Not strictly checking whether other IFxDEF between this ELSEIFDEF and ENDIF will be encountered.
+            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            return
+
+        if directive == "ELSEIFNDEF" and definition not in allowlisted_asm_def_filters:
+            # NOTE: Not strictly checking whether other IFxDEF between this ELSEIFNDEF and ENDIF will be encountered.
+            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            return
+
+
+def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters):
+    while True:
+        i, line = next(line_iterator)
+        directive, definition = get_directive_with_arg_from_line(line)
+
+        if directive == "ENDIF":
+            # This is another IF directive, not related to conditional definitions, so include the ENDIF in the output.
+            fostream.write(line)
+            return
+
+        if directive == "IFDEF":
+            if definition in allowlisted_asm_def_filters:
+                process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            else:
+                process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters)
+        if directive == "IFNDEF":
+            if definition in allowlisted_asm_def_filters:
+                process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            else:
+                process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+
+        if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
+            sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF inside an IFxxx directive other than IFDEF "
+                     "or IFNDEF is not currently supported by this script.")
 
 
 def add_to_allowlist_if_equ(line, allowlist, log_prefix):
@@ -105,6 +175,14 @@ def get_directive_with_arg_from_line(line):
     statement_components = line.lstrip().split()  # "default separator is any whitespace"
     if len(statement_components) < 1:
         return None, None
+
+    # Check if the line has a label
+    if statement_components[0].endswith(':'):
+        print(f"Encountered label: {statement_components[0]}")
+        statement_components = statement_components[1:]  # Remove the first item from the array
+        if len(statement_components) < 1:
+            return None, None
+
     directive = statement_components[0].upper()
     if directive == "IFDEF" or directive == "IFNDEF" or directive == "ELSEIFDEF":
         return directive, statement_components[1].upper()
