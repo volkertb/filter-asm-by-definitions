@@ -111,16 +111,20 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
 
 
 def process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters):
-    else_true_branch_encountered_yet = False
-    currently_inside_else_true_branch = False
+    nested_ignored_if_blocks = 0
     while True:
         i, line = next(line_iterator)
         directive, definition = get_directive_with_arg_from_line(line)
 
         if directive == "ENDIF":
-            return
+            if nested_ignored_if_blocks > 0:
+                nested_ignored_if_blocks -= 1
+            else:
+                return
 
         if directive is not None and not directive.startswith("ELSE"):
+            if directive.startswith("IF"):
+                nested_ignored_if_blocks += 1
             continue
 
         if directive == "ELSE":
