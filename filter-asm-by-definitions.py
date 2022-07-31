@@ -8,6 +8,7 @@ from enum import Enum
 
 ENCODING_ARG_PREFIX = "--encoding="
 ASM_DEF_FILTER_PREFIX = "-D"
+ASM_PRESERVED_DEF_PREFIX = "-P"
 OUTPUT_FILE = "out.asm"
 CONDITIONAL_DEFINITION_DIRECTIVES = ["IFDEF", "IFNDEF", "ELSEIFDEF", "ELSEIFNDEF"]
 
@@ -18,8 +19,9 @@ class MasmKeywordAction(Enum):
     EXCLUDE_CODE_BLOCK = 2
 
 
-def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
-    print(f"Specified allowlisted IFDEF filters: {allowlisted_asm_def_filters}")
+def filter_file(input_file_path, encoding, allowlisted_asm_def_filters, definitions_to_reserve):
+    print(f"Specified allowlisted IF(N)DEF filters: {allowlisted_asm_def_filters}")
+    print(f"Specified IF(N)DEFs to preserve (keep variable): {definitions_to_reserve}")
     try:
         with open(input_file_path, 'r', encoding=encoding) as fstream:
             with open(OUTPUT_FILE, 'w', encoding=encoding) as fostream:
@@ -39,23 +41,37 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
                         directive, definition, label = get_directive_with_arg_and_label_from_line(line)
 
                         if directive == "IFDEF":
-                            if label is not None:
-                                fostream.write(label)
-                            if definition in allowlisted_asm_def_filters:
-                                process_conditional_definition_true_block(line_iterator, fostream,
-                                                                          allowlisted_asm_def_filters)
+                            if definition in asm_defs_to_preserve:
+                                fostream.write(line)
+                                process_other_conditional_block(line_iterator, fostream,
+                                                                allowlisted_asm_def_filters, definitions_to_reserve)
                             else:
-                                process_conditional_definition_false_block(line_iterator, fostream,
-                                                                           allowlisted_asm_def_filters)
+                                if label is not None:
+                                    fostream.write(label)
+                                if definition in allowlisted_asm_def_filters:
+                                    process_conditional_definition_true_block(line_iterator, fostream,
+                                                                              allowlisted_asm_def_filters,
+                                                                              definitions_to_reserve)
+                                else:
+                                    process_conditional_definition_false_block(line_iterator, fostream,
+                                                                               allowlisted_asm_def_filters,
+                                                                               definitions_to_reserve)
                         elif directive == "IFNDEF":
-                            if label is not None:
-                                fostream.write(label)
-                            if definition in allowlisted_asm_def_filters:
-                                process_conditional_definition_false_block(line_iterator, fostream,
-                                                                           allowlisted_asm_def_filters)
+                            if definition in asm_defs_to_preserve:
+                                fostream.write(line)
+                                process_other_conditional_block(line_iterator, fostream,
+                                                                allowlisted_asm_def_filters, definitions_to_reserve)
                             else:
-                                process_conditional_definition_true_block(line_iterator, fostream,
-                                                                          allowlisted_asm_def_filters)
+                                if label is not None:
+                                    fostream.write(label)
+                                if definition in allowlisted_asm_def_filters:
+                                    process_conditional_definition_false_block(line_iterator, fostream,
+                                                                               allowlisted_asm_def_filters,
+                                                                               definitions_to_reserve)
+                                else:
+                                    process_conditional_definition_true_block(line_iterator, fostream,
+                                                                              allowlisted_asm_def_filters,
+                                                                              definitions_to_reserve)
                         else:
                             allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
                                                                                   f"{input_file_path}:{i + 1}: ")
@@ -73,7 +89,8 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
                  f"(for instance `{ENCODING_ARG_PREFIX}IBM437`, which is typical for DOS sources)")
 
 
-def process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters):
+def process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                              definitions_to_reserve):
     ignore_remaining_lines_until_corresponding_endif = False
     nested_ignored_if_blocks = 0
     while True:
@@ -95,27 +112,38 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
             continue
 
         if directive == "IFDEF":
-            if label is not None:
-                fostream.write(label)
-            if definition in allowlisted_asm_def_filters:
-                process_conditional_definition_true_block(line_iterator, fostream,
-                                                          allowlisted_asm_def_filters)
+            if definition in asm_defs_to_preserve:
+                fostream.write(line)
+                process_other_conditional_block(line_iterator, fostream,
+                                                allowlisted_asm_def_filters, definitions_to_reserve)
             else:
-                process_conditional_definition_false_block(line_iterator, fostream,
-                                                           allowlisted_asm_def_filters)
+                if label is not None:
+                    fostream.write(label)
+                if definition in allowlisted_asm_def_filters:
+                    process_conditional_definition_true_block(line_iterator, fostream,
+                                                              allowlisted_asm_def_filters, definitions_to_reserve)
+                else:
+                    process_conditional_definition_false_block(line_iterator, fostream,
+                                                               allowlisted_asm_def_filters, definitions_to_reserve)
         elif directive == "IFNDEF":
-            if label is not None:
-                fostream.write(label)
-            if definition in allowlisted_asm_def_filters:
-                process_conditional_definition_false_block(line_iterator, fostream,
-                                                           allowlisted_asm_def_filters)
+            if definition in asm_defs_to_preserve:
+                fostream.write(line)
+                process_other_conditional_block(line_iterator, fostream,
+                                                allowlisted_asm_def_filters, definitions_to_reserve)
             else:
-                process_conditional_definition_true_block(line_iterator, fostream,
-                                                          allowlisted_asm_def_filters)
+                if label is not None:
+                    fostream.write(label)
+                if definition in allowlisted_asm_def_filters:
+                    process_conditional_definition_false_block(line_iterator, fostream,
+                                                               allowlisted_asm_def_filters, definitions_to_reserve)
+                else:
+                    process_conditional_definition_true_block(line_iterator, fostream,
+                                                              allowlisted_asm_def_filters, definitions_to_reserve)
         elif directive is not None and directive.startswith("IF"):
             # This is another IFx directive, not related to conditional definitions, so include the IFx in the output.
             fostream.write(line)
-            process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                            definitions_to_reserve)
         elif directive is not None and directive.startswith("ELSE"):
             ignore_remaining_lines_until_corresponding_endif = True
         else:
@@ -124,7 +152,8 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
             fostream.write(line)
 
 
-def process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters):
+def process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                               definitions_to_reserve):
     nested_ignored_if_blocks = 0
     while True:
         i, line = next(line_iterator)
@@ -143,46 +172,65 @@ def process_conditional_definition_false_block(line_iterator, fostream, allowlis
 
         if directive == "ELSE":
             # NOTE: Not strictly checking whether other IFxDEF between this ELSE and ENDIF will be encountered.
-            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                      definitions_to_reserve)
             return
 
         if directive == "ELSEIFDEF" and definition in allowlisted_asm_def_filters:
             # NOTE: Not strictly checking whether other IFxDEF between this ELSEIFDEF and ENDIF will be encountered.
-            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                      definitions_to_reserve)
             return
 
         if directive == "ELSEIFNDEF" and definition not in allowlisted_asm_def_filters:
             # NOTE: Not strictly checking whether other IFxDEF between this ELSEIFNDEF and ENDIF will be encountered.
-            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+            process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                      definitions_to_reserve)
             return
 
+        if definition in asm_defs_to_preserve:
+            if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
+                sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF with definition \"definition\" that was"
+                         "specified with -P (\"preserve\") option inside an IF(N)DEF that was excluded with a -D "
+                         "(\"filter\") option. This is not currently supported by the script, and would have to be "
+                         "debugged further.")
 
-def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters):
+
+def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters, definitions_to_reserve):
     while True:
         i, line = next(line_iterator)
         directive, definition, label = get_directive_with_arg_and_label_from_line(line)
 
-        if label is not None:
-            fostream.write(label)
-
         if directive == "IFDEF":
-            if label is not None:
+            if label is not None and definition not in asm_defs_to_preserve:
                 fostream.write(label)
             if definition in allowlisted_asm_def_filters:
-                process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+                process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                          definitions_to_reserve)
+            elif definition in asm_defs_to_preserve:
+                fostream.write(line)
+                process_other_conditional_block(line_iterator, fostream,
+                                                allowlisted_asm_def_filters, definitions_to_reserve)
             else:
-                process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters)
+                process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                           definitions_to_reserve)
         if directive == "IFNDEF":
-            if label is not None:
+            if label is not None and definition not in asm_defs_to_preserve:
                 fostream.write(label)
             if definition in allowlisted_asm_def_filters:
-                process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters)
+                process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                           definitions_to_reserve)
+            elif definition in asm_defs_to_preserve:
+                fostream.write(line)
+                process_other_conditional_block(line_iterator, fostream,
+                                                allowlisted_asm_def_filters, definitions_to_reserve)
             else:
-                process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
+                process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
+                                                          definitions_to_reserve)
 
-        if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
-            sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF inside an IFxxx directive other than IFDEF "
-                     "or IFNDEF is not currently supported by this script.")
+        # if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
+        #     sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF inside an IFxxx directive other than IFDEF "
+        #              "or IFNDEF is not currently supported by this script.")
 
         allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
                                                               f"Input line {i + 1}: ")
@@ -254,6 +302,7 @@ if __name__ == "__main__":
                  f'as an additional argument. {input_file_encoding} will be assumed by default.')
 
     asm_def_filters = []
+    asm_defs_to_preserve = []
 
     if len(sys.argv[1:]) > 1:
         for argument in sys.argv[1:]:
@@ -261,5 +310,10 @@ if __name__ == "__main__":
                 input_file_encoding = argument.removeprefix(ENCODING_ARG_PREFIX)
             elif argument.startswith(ASM_DEF_FILTER_PREFIX):
                 asm_def_filters.append(argument.removeprefix(ASM_DEF_FILTER_PREFIX))
+            elif argument.startswith(ASM_PRESERVED_DEF_PREFIX):
+                asm_defs_to_preserve.append(argument.removeprefix(ASM_PRESERVED_DEF_PREFIX))
 
-    filter_file(sys.argv[1], input_file_encoding, asm_def_filters)
+    if not set(asm_def_filters).isdisjoint(asm_defs_to_preserve):
+        sys.exit("You cannot specify the same definition for both filtering (-D) and preserving (-P).")
+
+    filter_file(sys.argv[1], input_file_encoding, asm_def_filters, asm_defs_to_preserve)
