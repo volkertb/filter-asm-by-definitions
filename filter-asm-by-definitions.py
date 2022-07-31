@@ -150,7 +150,7 @@ def process_conditional_definition_false_block(line_iterator, fostream, allowlis
     nested_ignored_if_blocks = 0
     while True:
         i, line = next(line_iterator)
-        directive, definition, label = get_directive_with_arg_and_label_from_line(line)
+        directive, definition, _ = get_directive_with_arg_and_label_from_line(line)
 
         if directive == "ENDIF":
             if nested_ignored_if_blocks > 0:
@@ -182,7 +182,7 @@ def process_conditional_definition_false_block(line_iterator, fostream, allowlis
             return
 
         if definition in asm_defs_to_preserve:
-            if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
+            if directive in ("ELSEIFDEF", "ELSEIFNDEF"):
                 sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF with definition \"definition\" that was"
                          "specified with -P (\"preserve\") option inside an IF(N)DEF that was excluded with a -D "
                          "(\"filter\") option. This is not currently supported by the script, and would have to be "
@@ -258,16 +258,16 @@ def get_directive_with_arg_and_label_from_line(line):
             return None, None, label
 
     directive = statement_components[0].upper()
-    if directive == "IFDEF" or directive == "IFNDEF" or directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
+    if directive in ("IFDEF", "IFNDEF", "ELSEIFDEF", "ELSEIFNDEF"):
         return directive, statement_components[1].upper(), label
-    else:
-        return directive, None, label
+
+    return directive, None, label
 
 
 def is_start_of_excluded_definition(line, allowlisted_defs):
     statement_components = line.lstrip().split()  # "default separator is any whitespace"
     first_statement_in_line_in_upper_case = statement_components[0].upper()
-    if first_statement_in_line_in_upper_case == "IFDEF" or first_statement_in_line_in_upper_case == "ELSEIFDEF":
+    if first_statement_in_line_in_upper_case in ("IFDEF", "ELSEIFDEF"):
         if statement_components[1] in allowlisted_defs:
             return True
     return False
@@ -276,7 +276,7 @@ def is_start_of_excluded_definition(line, allowlisted_defs):
 def is_start_of_allowlisted_definition(line, allowlisted_defs):
     statement_components = line.lstrip().split()  # "default separator is any whitespace"
     first_statement_in_line_in_upper_case = statement_components[0].upper()
-    if first_statement_in_line_in_upper_case == "IFDEF" or first_statement_in_line_in_upper_case == "ELSEIFDEF":
+    if first_statement_in_line_in_upper_case in ("IFDEF", "ELSEIFDEF"):
         if statement_components[1] in allowlisted_defs:
             return True
     return False
