@@ -74,7 +74,8 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
 
 
 def process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters):
-    ignore_remaining_lines_until_endif = False
+    ignore_remaining_lines_until_corresponding_endif = False
+    nested_ignored_if_blocks = 0
     while True:
         i, line = next(line_iterator)
         directive, definition, label = get_directive_with_arg_and_label_from_line(line)
@@ -83,9 +84,14 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
                                                               f"Input line {i + 1}: ")
 
         if directive == "ENDIF":
-            return
+            if nested_ignored_if_blocks > 0:
+                nested_ignored_if_blocks -= 1
+            else:
+                return
 
-        if ignore_remaining_lines_until_endif:
+        if ignore_remaining_lines_until_corresponding_endif:
+            if directive is not None and directive.startswith("IF"):
+                nested_ignored_if_blocks += 1
             continue
 
         if directive == "IFDEF":
@@ -111,7 +117,7 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
             fostream.write(line)
             process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters)
         elif directive is not None and directive.startswith("ELSE"):
-            ignore_remaining_lines_until_endif = True
+            ignore_remaining_lines_until_corresponding_endif = True
         else:
             allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
                                                                   f"Input line {i + 1}: ")
