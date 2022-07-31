@@ -36,9 +36,11 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
                 try:
                     while True:
                         i, line = next(line_iterator)
-                        directive, definition = get_directive_with_arg_from_line(line)
+                        directive, definition, label = get_directive_with_arg_and_label_from_line(line)
 
                         if directive == "IFDEF":
+                            if label is not None:
+                                fostream.write(label)
                             if definition in allowlisted_asm_def_filters:
                                 process_conditional_definition_true_block(line_iterator, fostream,
                                                                           allowlisted_asm_def_filters)
@@ -46,6 +48,8 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters):
                                 process_conditional_definition_false_block(line_iterator, fostream,
                                                                            allowlisted_asm_def_filters)
                         elif directive == "IFNDEF":
+                            if label is not None:
+                                fostream.write(label)
                             if definition in allowlisted_asm_def_filters:
                                 process_conditional_definition_false_block(line_iterator, fostream,
                                                                            allowlisted_asm_def_filters)
@@ -73,7 +77,7 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
     ignore_remaining_lines_until_endif = False
     while True:
         i, line = next(line_iterator)
-        directive, definition = get_directive_with_arg_from_line(line)
+        directive, definition, label = get_directive_with_arg_and_label_from_line(line)
 
         allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
                                                               f"Input line {i + 1}: ")
@@ -85,6 +89,8 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
             continue
 
         if directive == "IFDEF":
+            if label is not None:
+                fostream.write(label)
             if definition in allowlisted_asm_def_filters:
                 process_conditional_definition_true_block(line_iterator, fostream,
                                                           allowlisted_asm_def_filters)
@@ -92,6 +98,8 @@ def process_conditional_definition_true_block(line_iterator, fostream, allowlist
                 process_conditional_definition_false_block(line_iterator, fostream,
                                                            allowlisted_asm_def_filters)
         elif directive == "IFNDEF":
+            if label is not None:
+                fostream.write(label)
             if definition in allowlisted_asm_def_filters:
                 process_conditional_definition_false_block(line_iterator, fostream,
                                                            allowlisted_asm_def_filters)
@@ -114,7 +122,7 @@ def process_conditional_definition_false_block(line_iterator, fostream, allowlis
     nested_ignored_if_blocks = 0
     while True:
         i, line = next(line_iterator)
-        directive, definition = get_directive_with_arg_from_line(line)
+        directive, definition, label = get_directive_with_arg_and_label_from_line(line)
 
         if directive == "ENDIF":
             if nested_ignored_if_blocks > 0:
@@ -146,14 +154,21 @@ def process_conditional_definition_false_block(line_iterator, fostream, allowlis
 def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def_filters):
     while True:
         i, line = next(line_iterator)
-        directive, definition = get_directive_with_arg_from_line(line)
+        directive, definition, label = get_directive_with_arg_and_label_from_line(line)
+
+        if label is not None:
+            fostream.write(label)
 
         if directive == "IFDEF":
+            if label is not None:
+                fostream.write(label)
             if definition in allowlisted_asm_def_filters:
                 process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters)
             else:
                 process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters)
         if directive == "IFNDEF":
+            if label is not None:
+                fostream.write(label)
             if definition in allowlisted_asm_def_filters:
                 process_conditional_definition_false_block(line_iterator, fostream, allowlisted_asm_def_filters)
             else:
@@ -184,23 +199,26 @@ def add_to_allowlist_if_equ(line, allowlist, log_prefix):
     return allowlist
 
 
-def get_directive_with_arg_from_line(line):
+def get_directive_with_arg_and_label_from_line(line):
     statement_components = line.lstrip().split()  # "default separator is any whitespace"
     if len(statement_components) < 1:
-        return None, None
+        return None, None, None
+
+    label = None
 
     # Check if the line has a label
     if statement_components[0].endswith(':'):
-        print(f"Encountered label: {statement_components[0]}")
+        label = statement_components[0]
+        print(f"Encountered label: {label}")
         statement_components = statement_components[1:]  # Remove the first item from the array
         if len(statement_components) < 1:
-            return None, None
+            return None, None, label
 
     directive = statement_components[0].upper()
-    if directive == "IFDEF" or directive == "IFNDEF" or directive == "ELSEIFDEF":
-        return directive, statement_components[1].upper()
+    if directive == "IFDEF" or directive == "IFNDEF" or directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
+        return directive, statement_components[1].upper(), label
     else:
-        return directive, None
+        return directive, None, label
 
 
 def is_start_of_excluded_definition(line, allowlisted_defs):
