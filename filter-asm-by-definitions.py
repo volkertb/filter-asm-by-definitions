@@ -25,13 +25,6 @@ def filter_file(input_file_path, encoding, allowlisted_asm_def_filters, definiti
     try:
         with open(input_file_path, 'r', encoding=encoding) as fstream:
             with open(OUTPUT_FILE, 'w', encoding=encoding) as fostream:
-                if_directive_lines_stack = []
-                currently_in_excluded_segment = False
-
-                currently_inside_conditional_definition_block = False  # TODO: is this one still necessary, since we now have `what_to_do_with_next_else_keyword`?
-                directive_confirming_inclusion_in_block = None
-                directive_confirming_exlusion_in_block = None
-                what_to_do_with_next_else_keyword = MasmKeywordAction.TREAT_AS_CONTENT
 
                 line_iterator = iter(enumerate(fstream))
 
@@ -227,10 +220,6 @@ def process_other_conditional_block(line_iterator, fostream, allowlisted_asm_def
             else:
                 process_conditional_definition_true_block(line_iterator, fostream, allowlisted_asm_def_filters,
                                                           definitions_to_reserve)
-
-        # if directive == "ELSEIFDEF" or directive == "ELSEIFNDEF":
-        #     sys.exit(f"Line {i + 1} in input file: ELSEIFDEF or ELSEIFNDEF inside an IFxxx directive other than IFDEF "
-        #              "or IFNDEF is not currently supported by this script.")
 
         allowlisted_asm_def_filters = add_to_allowlist_if_equ(line, allowlisted_asm_def_filters,
                                                               f"Input line {i + 1}: ")
