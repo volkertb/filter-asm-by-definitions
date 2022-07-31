@@ -1,4 +1,4 @@
-# filter-asm-by-definitions.py
+# filter_asm_by_definitions.py
 
 ## What is this?
 
@@ -27,7 +27,7 @@ You can use [Wohlstand's WASM fork of the AIL/32 sources](https://github.com/Woh
 script on those sources as follows:
 
 ```shell
-./filter-asm-by-definitions.py dmasnd32.asm --encoding=IBM437 -DPAS -PDPMI -PINT21
+./filter_asm_by_definitions.py dmasnd32.asm --encoding=IBM437 -DPAS -PDPMI -PINT21
 ```
 
 The `encoding` option is to specify that the source files have Code page 437 encoding, which was typical of source code
